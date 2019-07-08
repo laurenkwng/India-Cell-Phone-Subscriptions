@@ -1,0 +1,314 @@
+---
+title: "Modelling Cellular Phone Subscriptions in India"
+author: "Group Theta"
+date: "6/6/2018"
+output:
+  pdf_document: default
+fontsize: 10pt
+font: Times New Roman
+---
+\begin{titlepage}
+\end{titlepage}
+\tableofcontents
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy = TRUE)
+```
+#Abstract
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The purpose of our project was to accurately forecast the number of mobile cellular phone subscriptions in India, based on previous rates. This is of interest in relation to the recent and massive incorporation of a digital identity system named Aadhaar. Aadhaar is a 12-digit unique identity number that can be obtained by residents of India, based on their biometric and demographic data. In our analysis of the time-series, we used various techniques, including Box-Cox transformations and differencing to make the time series stationary and thus allowing us to identify potential models by looking at ACF and PACF plots.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;During our analysis, we were able to come up with many candidate models, however, only one of our candidates was most suitable for forecasting: ARIMA(1,1,2) model. The ARIMA(1,1,2) model passed the Box-Ljung and Shapiro-Wilk tests, is viable for forecasting, and best satisfies the principle of parsimony, compared to our other candidates. 
+
+#Introduction
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;The Aadhaar Act, passed in 2016, is a money bill from the Parliament of India that is aimed at providing legal backing for the unique digital identification system implemented by Aadhaar. The Aadhaar Act is also known as the Targeted Delivery of Financial and other Subsidies, Benefits and Services Act, which perfectly describes the motives behind its implementation. Though China is often brought up during discussions of overpopulation and population density, India faces many of the same issues and has been actively solving the problems, evidenced by Aadhaar and its great success. The Aadhaar act has seen authentication success rates for government services of up to 96.4% in 2013, though the rates have fallen to around 88% currently. In general, Aadhaar is aimed at increasing financial inclusion and benefit participation for all Indian citizens, and we believe that looking at mobile cellular phone subscriptions is a strong indicator of these factors.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;We took our data from the website Quandl.com, which cites United Nations Information and Communication Technology as its source for the data. Though the dataset is defined from 12/31/1960 to 12/31/2014, the cellphone was invented in 1994, and as such the first non-zero values occur at 12/31/1995. From that point until 2014, the number of subscriptions was taken at yearly intervals. 
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Upon initial observation of the data, we noticed a strong exponential/logarithmic trend and a lack of seasonality. Therefore, before model selection, we decided to difference the data twice, in order to make it stationary, and to apply a Box-Cox transformation, to stabilize the variance. After this, we analyzed ACF and PACF plots of the differenced and transformed data to estimate the best fit model, and from there used R to test the fit of many models by comparing AIC values. When our top choices for possible models were chosen, we applied diagnostic checking techniques such as Shapiro-Wilk (normality of residuals) and Box-Ljung (serial correlation of residuals) to choose our best fit model and used this to make our predictions. 
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Our final model was an ARIMA(1,1,2), which can be represented as an AR(1) and MA(2), differenced once. We validated and forecasted subscription numbers for the next 5 years using this model.
+
+#Initial Time Series Analysis
+To start, we plotted the time series of the original data to get an idea of its general form and to identify whether any trend or seasonality is present.
+```{r include=FALSE}
+library(MuMIn)
+library(MASS)
+```
+
+```{r echo=FALSE}
+cellphone = read.csv("/Users/laurenwong/Downloads/UICT-CELL_IND.csv", nrows = 20, colClasses = c(NA,NA,"NULL"))
+cellphone = cellphone[nrow(cellphone):1,]
+cellphone.ts = ts(cellphone, frequency = 1)
+ts.plot(cellphone.ts, ylab = "Mobile Cellular Telephone Subscriptions", xlab = "Years Since 12/31/1994")
+title(expression(Mobile~Celluar~Telephone~Subscriptions))
+```
+
+
+We can see a strong exponential trend from the positive exponential increase of the graph.  However, we do seem to see a lack of seasonality.
+
+
+```{r echo=FALSE}
+par(mfrow=c(1,2))
+cellphone = read.csv("/Users/laurenwong/Downloads/UICT-CELL_IND.csv", nrows = 20, colClasses = c("NULL",NA,"NULL"))
+#cellphone.test <- cellphone[15:20]
+cellphone = cellphone[nrow(cellphone):1,]
+cellphone.ts = ts(cellphone, frequency = 1)
+acf(cellphone.ts, lag.max = 10, main = "Xt")
+pacf(cellphone.ts, lag.max = 10, main = "Xt")
+```
+
+
+Although it was already apparent from our initial analysis of the time-series plot, the ACF and PACF plots validate our assumptions that the series is not stationary and has a trend component.
+
+The decompose function can be helpful in visualizing the different components of the model, such as trend, seasonality, and stationarity. 
+
+```{r echo=FALSE}
+cellphone.ts = ts(cellphone, frequency = 2)
+decompose_cellphone = decompose(cellphone.ts, type = "multiplicative")
+plot(decompose_cellphone)
+```
+
+From this chart, we can see that the underlying trend in the graph plays a defining role in its shape. The seasonality is artificial, as we used a frequency = 2 for 20 data points, creating the seasonal effect seen here as well as changing the time interval to 1-10 years.
+
+#Box Cox Transformation
+Box Cox transformations can help us deal with the problem of heteroscedasticity in our data. However, we must plot a 95% confidence interval to see what value of lambda can maximize our log-likelihood.
+
+```{r echo=FALSE}
+cellphone = read.csv("/Users/laurenwong/Downloads/UICT-CELL_IND.csv", nrows = 20, colClasses = c("NULL",NA,"NULL"))
+cellphone = cellphone[nrow(cellphone):1,]
+cellphone.ts = ts(cellphone, frequency = 1)
+bcTransform = boxcox(cellphone.ts ~ as.numeric(1:length(cellphone.ts)), lambda = seq(-1, 1, length = 10))
+
+#Log transform
+cellphone.tr = log(cellphone.ts)
+cellphone.test.tr = cellphone.ts^(1/3)
+ts.plot(cellphone.tr, xlab = "Years Since 12/31/1995", ylab = "log(Mobile Celluar Subscriptions)", main = "Log Transformed Data")
+var(cellphone.tr)
+var(cellphone.ts)
+var(cellphone.test.tr)
+```
+
+#Removing Trend
+```{r, echo = FALSE}
+cellphone_d1 = diff(cellphone.tr, differences = 1)
+var(cellphone_d1)
+cellphone_d2 = diff(cellphone_d1, differences = 1)
+var(cellphone_d2)
+ts.plot(cellphone_d1, ylab = "Differenced Once Mobile Cellular Subscriptions")
+ts.plot(cellphone_d2, ylab = "Differenced Twice Mobile Cellular Subscriptions")
+
+par(mfrow=c(1,2))
+acf(cellphone_d1, lag.max = 60)
+pacf(cellphone_d1, lag.max = 60)
+acf(cellphone_d2, lag.max = 60)
+pacf(cellphone_d2, lag.max = 60)
+```
+
+Upon review of our differenced data plot and their ACF and PACF it appears that our data still displays a significant trend component. The variance of differencing once is: 0.1304289. We difference a second time and re-assess. Differencing a second time further decreases the variance: 0.06789504.
+
+From our twice differenced data plots, ACF, and PACF we can see that the trend is removed.  Unfortunately, the twice differenced data creates a unit root in our ARIMA model, the data has been over-differenced.
+
+This gives us significant reason to choose a once differenced model. Our ACF and PACF plots suggest an MA model, but since it is not entirely clear whether there is no AR component we decided to look at the following models: ARIMA(1,1,1) as fit1, ARIMA(2,1,0) as fit2, ARIMA(0,1,1) as fit3, and ARIMA(1,1,2) as fit4. 
+
+#ARIMA Models
+We will test various combinations of ARIMA models with different p and q parameters using a for loop that returns AIC values up to ARIMA(5,1,5). 
+
+```{r echo=FALSE, warning=FALSE}
+aicc <- matrix(NA, nr = 6, nc = 6)
+dimnames(aicc) = list(p= 0:5,q = 0:5)
+for (p in 0:5) 
+{
+  for (q in 0:5) 
+  {
+    aicc[p+1,q+1] = AICc(arima(cellphone.ts, order = c(p,1,q), method = "ML"))
+  }
+}
+aicc
+```
+
+After running the loop and obtaining the necessary AIC values for several different ARMA models up to ARMA(5,1,5), we concluded that the following models with the smallest AICs are: ARMA(1,1,0), ARMA(0,1,1), ARMA(0,1,2), ARMA(1,1,1), ARMA(2,1,0), ARMA(1,1,2).
+
+Instead of testing all 6 models, we will conduct diagnostic testing select models from the previous section, indicated by our ACF and PACFs. Our candidate models are: ARMA(1,1,1), ARMA(0,1,1), ARMA(2,1,0), ARMA(1,1,2).
+
+#Diagnostics Checking on Test Models
+
+```{r echo=FALSE}
+#(1,1,1)
+fit1 = arima(cellphone.ts, order=c(1,1,1), method="ML")
+fit1
+Box.test(residuals(fit1), type="Ljung")
+Box.test(residuals(fit1), type ="Box-Pierce")
+shapiro.test(residuals(fit1))
+op <- par(mfrow=c(2,2))
+ts.plot(residuals(fit1),main = "Fitted Residuals ARIMA (1,1,1)")
+hist(residuals(fit1),main = "ARIMA (1,1,1) Residuals")
+qqnorm(residuals(fit1))
+qqline(residuals(fit1),col ="blue")
+```
+
+The p-values for the Box-Ljung and Box-Pierce test are greater than our significance level of 0.05. Our model however because it doesn’t satisfy the normality condition, and there is an ar1 coefficient of 0, we will not include this model in our forecasting. 
+
+
+```{r echo=FALSE}
+#(2,1,0)
+fit2 = arima(cellphone.ts, order = c(2, 1, 0), method = "ML")
+fit2
+Box.test(residuals(fit2), type="Ljung")
+Box.test(residuals(fit2), type ="Box-Pierce")
+shapiro.test(residuals(fit2))
+op <- par(mfrow=c(2,2))
+ts.plot(residuals(fit2),main = "Fitted Residuals ARIMA (2,1,0)")
+hist(residuals(fit1),main = "ARIMA (2,1,0) Residuals")
+qqnorm(residuals(fit1))
+qqline(residuals(fit1),col ="blue")
+```
+
+The p-values for the Box-Ljung and Box-Pierce test are greater than our significance level of 0.05. Our model however doesn’t satisfy the normality condition, we will therefore not include this model in our forecasting. 
+
+
+```{r, echo = FALSE}
+#(0,1,1)
+fit3 = arima(cellphone.ts, order = c(0,1,1), method = "ML")
+fit3
+Box.test(residuals(fit3), type="Ljung")
+Box.test(residuals(fit3), type ="Box-Pierce")
+shapiro.test(residuals(fit3))
+op <- par(mfrow=c(2,2))
+ts.plot(residuals(fit3),main = "Fitted Residuals ARIMA (0,1,1)")
+hist(residuals(fit3),main = "ARIMA (0,1,1) Residuals")
+qqnorm(residuals(fit3))
+qqline(residuals(fit3),col ="blue")
+```
+
+The p-values for the Box-Ljung and Box-Pierce test are greater than our significance level of 0.05. Our model however doesn’t satisfy the normality condition, we will therefore not include this model in our forecasting. 
+
+
+```{r, echo = FALSE}
+#(1,1,2)
+fit4 = arima(cellphone.ts, order = c(1,1,2), method = "ML" )
+fit4
+Box.test(residuals(fit4), type="Ljung")
+Box.test(residuals(fit4), type ="Box-Pierce")
+shapiro.test(residuals(fit4))
+op <- par(mfrow=c(2,2))
+ts.plot(residuals(fit4),main = "Fitted Residuals ARIMA (1,1,2)")
+hist(residuals(fit4),main = "ARIMA (1,1,2) Residuals")
+qqnorm(residuals(fit4))
+qqline(residuals(fit4),col ="blue")
+```
+
+The p-values for the Box-Ljung and Box-Pierce test are greater than our significance level of 0.05 and our model satisfies the normality condition, so we will include this model in our forecasting. Therefore, all of our tests seem to be significant and this would be a viable model for forecasting after checking for invertibility and stationarity by looking at the unit roots.
+
+#Analyzing Unit Roots
+The next step is to check the unit roots of ARIMA(2,2,0) and ARIMA(0,2,1) for stationarity and invertibility, respectively. 
+
+```{r echo=FALSE}
+arroots <- function(object)
+{
+  if(!("Arima" %in% class(object)) & 
+     !("ar" %in% class(object)))
+    stop("object must be of class Arima or ar")
+  if("Arima" %in% class(object))
+    parvec <- object$model$phi
+  else
+    parvec <- object$ar
+  if(length(parvec) > 0)
+  {
+    last.nonzero <- max(which(abs(parvec) > 1e-08))
+    if (last.nonzero > 0)
+      return(structure(list(
+        roots=polyroot(c(1,-parvec[1:last.nonzero])),
+        type="AR"), 
+        class='armaroots'))
+  }
+  return(structure(list(roots=numeric(0), type="AR"),
+                   class='armaroots'))
+}
+
+# Compute MA roots
+maroots <- function(object)
+{
+  if(!("Arima" %in% class(object)))
+    stop("object must be of class Arima")
+  parvec <- object$model$theta
+  if(length(parvec) > 0)
+  {
+    last.nonzero <- max(which(abs(parvec) > 1e-08))
+    if (last.nonzero > 0)
+      return(structure(list(
+        roots=polyroot(c(1,parvec[1:last.nonzero])),
+        type="MA"), 
+        class='armaroots'))
+  }
+  return(structure(list(roots=numeric(0), type="MA"),
+                   class='armaroots'))
+}
+
+plot.armaroots <- function(x, xlab="Real", ylab="Imaginary",
+                           main=paste("Inverse roots of", x$type,
+                                      "characteristic polynomial"),
+                           ...)
+{
+  oldpar <- par(pty='s')
+  on.exit(par(oldpar))
+  plot(c(-1,1), c(-1,1), xlab=xlab, ylab=ylab,
+       type="n", bty="n", xaxt="n", yaxt="n", main=main, ...)
+  axis(1, at=c(-1,0,1), line=0.5, tck=-0.025)
+  axis(2, at=c(-1,0,1), label=c("-i","0","i"), 
+       line=0.5, tck=-0.025)
+  circx <- seq(-1,1,l=501)
+  circy <- sqrt(1-circx^2)
+  lines(c(circx,circx), c(circy,-circy), col='gray')
+  lines(c(-2,2), c(0,0), col='gray') 
+  lines(c(0,0), c(-2,2), col='gray')
+  if(length(x$roots) > 0) 
+  {
+    inside <- abs(x$roots) > 1
+    points(1/x$roots[inside], pch=19, col='black')
+    if(sum(!inside) > 0)
+      points(1/x$roots[!inside], pch=19, col='red')
+  }
+}
+
+maroots(fit4)
+plot(maroots(fit4),main="Inverse MA roots")
+arroots(fit4)
+plot(arroots(fit4), main="Inverse AR roots")
+
+```
+
+
+#Forecasting
+
+```{r echo=FALSE}
+cellphone = read.csv("/Users/laurenwong/Downloads/UICT-CELL_IND.csv", nrows = 20, colClasses = c(NA,NA,"NULL"))
+cellphone = cellphone[nrow(cellphone):1,]
+cellphone.test = cellphone$Mobile.Cellular.Telephone.Subscriptions[14:20]
+cellphone.test.ts = ts(cellphone.test, start = c(14,1))
+cellphone = cellphone$Mobile.Cellular.Telephone.Subscriptions[1:14]
+cellphone.ts = ts(cellphone, frequency = 1)
+
+
+ARIMA112 = arima(cellphone.ts, order = c(1,1,2), method = 'ML')
+
+
+
+mypred1 = predict(ARIMA112, n.ahead = 10)
+mypred1
+ts.plot(cellphone.ts, xlim = c(0, 25), ylim = c(0, 1500000000), ylab = "Mobile-Cellular Subscriptions")
+points(cellphone.test.ts, cex=0.8, pch=1, col="black")
+points(mypred1$pred, col='red', cex=0.8)
+lines(mypred1$pred+1.96*mypred1$se,lty=2,col="blue")
+lines(mypred1$pred-1.96*mypred1$se,lty=2,col="blue")
+title(expression(Mobile~Celluar~Telephone~Subscriptions~Forecasts))
+```
+
+
+
+
+
+
+
+
